@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BaliProject version="3.2" title="spi_flash" device="LFE5U-85F-6BG381C" default_implementation="spi_flash">
+    <Options/>
+    <Implementation title="spi_flash" dir="spi_flash" description="spi_flash" synthesis="lse" default_strategy="Strategy1">
+        <Options def_top="top" top="top"/>
+        <Source name="spi_flash/source/util.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
+        <Source name="spi_flash/source/uart.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
+        <Source name="spi_flash/source/pll_48.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
+        <Source name="spi_flash/source/fifo.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
+        <Source name="spi_flash/source/sdram.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
+        <Source name="spi_flash/source/pll_132.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
+        <Source name="spi_flash/source/pll_133.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
+        <Source name="spi_flash/source/pll_266.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
+        <Source name="spi_flash/source/glue.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
+        <Source name="spi_flash/source/spi_trx.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
+        <Source name="spi_flash/source/top.v" type="Verilog" type_short="Verilog">
+            <Options top_module="top"/>
+        </Source>
+        <Source name="ulx3s_v20.lpf" type="Logic Preference" type_short="LPF">
+            <Options/>
+        </Source>
+    </Implementation>
+    <Strategy name="Strategy1" file="spi_flash1.sty"/>
+</BaliProject>
