@@ -22,6 +22,13 @@ module spi_trx(
 	input wire[63:0] ram_read_buffer,
 	input wire ram_read_busy,
 	
+	// for writing
+	output reg write_cmd,
+	output reg write_type,
+	output reg[21:0] write_addr,
+	output reg[12:0] write_len,
+	input wire write_done,
+	
 	output reg log_strobe = 0,
 	output reg[7:0] log_val = 0
 );
@@ -62,13 +69,16 @@ module spi_trx(
 	reg[23:0] jedec_id = {8'h19, 8'hBA, 8'h20};
 	
 	localparam
+		CMD_PAGEPROGRAM		= 8'h02,
 		CMD_READ			= 8'h03,
 		CMD_WRITEDISABLE	= 8'h04,
 		CMD_READSTATUS		= 8'h05,
 		CMD_WRITEENABLE		= 8'h06,
+		CMD_SUBSECERASE		= 8'h20,
 		CMD_READID1			= 8'h9E,
 		CMD_READID2			= 8'h9F,
 		CMD_4BYTEENABLE		= 8'hB7,
+		CMD_SECTORERASE		= 8'hD8,
 		CMD_4BYTEDISABLE	= 8'hE9,
 		CMD_LOG				= 8'hF2;
 	
@@ -78,7 +88,11 @@ module spi_trx(
 		STA_ADDR_READ	= 2, // receiving address for a read command
 		STA_READ		= 3, // sending out bytes for a read command
 		STA_READID		= 4, // reading JEDEC ID
-		STA_LOG			= 5; // logging (passthrough to serial)
+		STA_ADDR_WRITE	= 5, // receiving address for a write command
+		STA_WRITE		= 6, // receiving bytes for a write command
+		STA_ADDR_ERASE	= 7, // receiving address for an erase command
+		STA_ERASE		= 8, // erasing
+		STA_LOG			= 9; // logging (passthrough to serial)
 	
 	reg[3:0] state;
 	
@@ -90,17 +104,15 @@ module spi_trx(
 	
 	reg fresh_read = 0;
 	
-	//reg[3:0] darp = 0;
-	
 	// bit1 = write enable latch
 	// bit0 = write in progress
 	reg[7:0] status_reg = 8'b00000000;
+	
+	reg[1:0] write_done_buf;
 
     always @(posedge spi_clk) begin
 		if (is_selected) begin
 			fresh_read <= 0;
-			
-			spi_debug <= 0;
 			
 			if (reset_cs || reset_power) begin
 				// starting a new command -- reinitialize state
@@ -123,6 +135,9 @@ module spi_trx(
 				ram_activate <= 0;
 				ram_read <= 0;
 				
+				write_cmd <= 0;
+				write_done_buf <= 0;
+				
 				if (reset_power) begin
 					// if we received a reset, reset some internal registers
 					
@@ -131,12 +146,14 @@ module spi_trx(
 					
 					log_strobe <= 1;
 					log_val <= 8'hE2;
-					
-					//darp <= 0;
 				end
 			end
 			else begin
 				log_strobe <= 0;
+				
+				write_done_buf <= {write_done_buf[0], write_done};
+				if (status_reg[0] && write_done_buf[1])
+					status_reg[0] <= 0;
 				
 				// sample MOSI, advance bit count
 				mosi_byte[bit_count_in] <= spi_mosi;
@@ -175,6 +192,24 @@ module spi_trx(
 						state <= STA_ADDR_READ;
 						
 						addr_count <= addr_4byte ? 31 : 23;
+					end
+					
+					CMD_SUBSECERASE: begin
+						if (status_reg[1]) begin
+							state <= STA_ADDR_ERASE;
+							
+							addr_count <= addr_4byte ? 31 : 23;
+							write_len <= 13'h01FF;
+						end
+					end
+					
+					CMD_SECTORERASE: begin
+						if (status_reg[1]) begin
+							state <= STA_ADDR_ERASE;
+							
+							addr_count <= addr_4byte ? 31 : 23;
+							write_len <= 13'h1FFF;
+						end
 					end
 					
 					CMD_READID1,
@@ -226,11 +261,6 @@ module spi_trx(
 						ram_read <= 0;
 							
 						fresh_read <= 1;
-						
-						//darp <= darp+1;
-						//if (addr == 31'h005000B4)
-						//if (darp == 4)
-							spi_debug <= 1;
 					end
 					
 					if (bit_count_in == 0) begin
@@ -282,6 +312,29 @@ module spi_trx(
 						end
 						else
 							miso_byte <= 0;
+					end
+				end
+				else if (state == STA_ADDR_ERASE) begin
+					if (addr_count == 0) begin
+						state <= STA_ERASE;
+						write_cmd <= 1;
+						write_type <= 1;
+						
+						if (write_len[15])
+							write_addr <= {addr[24:16], 13'b0};
+						else
+							write_addr <= {addr[24:12], 9'b0};
+							
+						status_reg[1] <= 0; // reset write enable
+						status_reg[0] <= 1; // write in progress
+					end
+					
+					addr[addr_count] <= spi_mosi;
+					addr_count <= addr_count - 1;
+					
+					if (bit_count_in == 0) begin
+						log_strobe <= 1;
+						log_val <= {mosi_byte[7:1], spi_mosi};
 					end
 				end
 				else if (state == STA_LOG) begin

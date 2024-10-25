@@ -163,6 +163,12 @@ module top(
 	
 	wire[21:0] spi_ram_addr;
 	
+	wire spi_write_cmd;
+	wire spi_write_type;
+	wire[21:0] spi_write_addr;
+	wire[12:0] spi_write_len;
+	wire spi_write_done;
+	
 	wire log_strobe;
 	wire[7:0] log_val;
 	
@@ -188,6 +194,12 @@ module top(
 		.ram_addr(spi_ram_addr),
 		.ram_read_buffer(sdram_read_buffer),
 		.ram_read_busy(sdram_read_busy),
+		
+		.write_cmd(spi_write_cmd),
+		.write_type(spi_write_type),
+		.write_addr(spi_write_addr),
+		.write_len(spi_write_len),
+		.write_done(spi_write_done),
 		
 		.log_strobe(log_strobe),
 		.log_val(log_val)
@@ -361,6 +373,12 @@ module top(
 		.sdram_write_mask(sdram_write_mask),
 		
 		.spi_active(spi_active),
+		
+		.spi_cmd_write(spi_write_cmd),
+		.spi_write_type(spi_write_type),
+		.spi_write_addr(spi_write_addr),
+		.spi_write_len(spi_write_len),
+		.spi_write_done(spi_write_done),
 		
 		.log_strobe(log_strobe),
 		.log_val(log_val),
