@@ -29,6 +29,10 @@ module spi_trx(
 	output reg[12:0] write_len,
 	input wire write_done,
 	
+	output reg write_buf_strobe,
+	output reg[7:0] write_buf_offset,
+	output reg[7:0] write_buf_val,
+	
 	output reg log_strobe = 0,
 	output reg[7:0] log_val = 0
 );
@@ -138,6 +142,8 @@ module spi_trx(
 				write_cmd <= 0;
 				write_done_buf <= 0;
 				
+				write_buf_strobe <= 0;
+				
 				if (reset_power) begin
 					// if we received a reset, reset some internal registers
 					
@@ -154,6 +160,8 @@ module spi_trx(
 				write_done_buf <= {write_done_buf[0], write_done};
 				if (status_reg[0] && write_done_buf[1])
 					status_reg[0] <= 0;
+					
+				write_buf_strobe <= 0;
 				
 				// sample MOSI, advance bit count
 				mosi_byte[bit_count_in] <= spi_mosi;
@@ -209,6 +217,15 @@ module spi_trx(
 							
 							addr_count <= addr_4byte ? 31 : 23;
 							write_len <= 13'h1FFF;
+						end
+					end
+					
+					CMD_PAGEPROGRAM: begin
+						if (status_reg[1]) begin
+							state <= STA_ADDR_WRITE;
+							
+							addr_count <= addr_4byte ? 31 : 23;
+							write_len <= 0;
 						end
 					end
 					
@@ -336,6 +353,36 @@ module spi_trx(
 						log_strobe <= 1;
 						log_val <= {mosi_byte[7:1], spi_mosi};
 					end
+				end
+				else if (state == STA_ADDR_WRITE) begin
+					if (addr_count == 0) begin
+						state <= STA_WRITE;
+						write_cmd <= 1;
+						write_type <= 0;
+						
+						write_addr <= addr[24:3];
+							
+						status_reg[1] <= 0; // reset write enable
+						status_reg[0] <= 1; // write in progress
+					end
+					
+					addr[addr_count] <= spi_mosi;
+					addr_count <= addr_count - 1;
+					
+					if (bit_count_in == 0) begin
+						log_strobe <= 1;
+						log_val <= {mosi_byte[7:1], spi_mosi};
+					end
+				end
+				else if ((state == STA_WRITE) && (bit_count_in == 0)) begin
+					// incoming data for a write command
+					write_buf_strobe <= 1;
+					write_buf_offset <= addr[7:0];
+					write_buf_val <= {mosi_byte[7:1], spi_mosi};
+					
+					addr[7:0] <= addr[7:0] + 1;
+					if (!write_len[8])
+						write_len <= write_len + 1;
 				end
 				else if (state == STA_LOG) begin
 					if (bit_count_in == 0) begin

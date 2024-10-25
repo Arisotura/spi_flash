@@ -34,6 +34,10 @@ module glue(
 	input wire[12:0] spi_write_len,
 	output reg spi_write_done,
 	
+	input wire spi_write_buf_strobe,
+	input wire[7:0] spi_write_buf_offset,
+	input wire[7:0] spi_write_buf_val,
+	
 	input wire log_strobe,
 	input wire[7:0] log_val,
 	
@@ -89,6 +93,12 @@ module glue(
 	reg[1:0] i_spi_write_state;
 	reg[21:0] i_spi_addr;
 	reg[12:0] i_spi_len;
+	
+	reg[7:0] i_spi_write_data[0:255];
+	reg i_spi_write_mask[0:255];
+	reg[1:0] spi_write_buf_strobe_buf;
+	
+	integer i;
 
     always @(posedge clk)
     begin
@@ -133,6 +143,11 @@ module glue(
 			i_spi_write_state <= 0;
 			i_spi_addr <= 0;
 			i_spi_len <= 0;*/
+			
+			spi_write_buf_strobe_buf <= 0;
+			
+			for (i = 0; i < 256; i=i+1)
+				i_spi_write_mask[i] <= 1;
         end
         else begin
             txd_strobe_buf <= 0;
@@ -163,12 +178,19 @@ module glue(
 			end
 			if (!log_strobe_buf[1]) log_ack <= 0;
 				
+			spi_write_buf_strobe_buf <= {spi_write_buf_strobe_buf[0], spi_write_buf_strobe};
+			if (spi_write_buf_strobe_buf[1]) begin
+				// store data in the buffer for page program operations
+				i_spi_write_data[spi_write_buf_offset] <= spi_write_buf_val;
+				i_spi_write_mask[spi_write_buf_offset] <= 0;
+			end
+				
 			spi_cmd_write_buf <= {spi_cmd_write_buf[0], spi_cmd_write};
 			
 			if (!spi_cmd_write_buf[1])
 				spi_write_ack <= 0;
 
-			if (spi_cmd_write_buf[1] && (!spi_write_ack)) begin
+			if (spi_cmd_write_buf[1] && (!spi_write_ack) && (!spi_active)) begin
 				spi_writing <= 1;
 				spi_write_ack <= 1;
 				i_spi_write_type <= spi_write_type;
@@ -182,8 +204,45 @@ module glue(
 				
 				if (i_spi_write_type == 0) begin
 					// write
-					// if (len[15:3])
-					// sdram_write_mask <= (16'hFFFF << len[2:0]);
+
+					if ((i_spi_write_state == 0) && (!sdram_busy)) begin
+						// activate
+						sdram_access_cmd <= 2'b11;
+						sdram_access_addr <= {i_spi_addr, 2'b0};
+
+						i_spi_write_state <= 1;
+					end
+					else if ((i_spi_write_state == 1) && (!sdram_busy)) begin
+						// write
+						sdram_access_cmd <= 2'b10;
+						sdram_access_addr <= {i_spi_addr, 2'b0};
+						
+						for (i = 0; i < 8; i=i+1) begin
+							sdram_write_buffer[i*8+:8] <= i_spi_write_data[(i_spi_addr[4:0]<<3)+i];
+							sdram_write_mask[i] <= i_spi_write_mask[(i_spi_addr[4:0]<<3)+i];
+						end
+
+						i_spi_write_state <= 2;
+					end
+					else if ((i_spi_write_state == 2) && (!sdram_busy)) begin
+
+						if (i_spi_len <= 8) begin
+							// finished
+							spi_writing <= 0;
+							spi_write_done <= 1;
+							
+							// reset write mask
+							for (i = 0; i < 256; i=i+1)
+								i_spi_write_mask[i] <= 1;
+						end
+						else begin
+							// prepare for the next burst
+							i_spi_write_state <= 0;
+							
+							i_spi_addr <= i_spi_addr + 1;
+							i_spi_len <= i_spi_len - 8;
+						end
+					end
 				end
 				else begin
 					// erase
@@ -201,7 +260,7 @@ module glue(
 						sdram_access_addr <= {i_spi_addr, 2'b0};
 						
 						sdram_write_buffer <= 64'hFFFFFFFFFFFFFFFF;
-						sdram_write_mask <= 16'h0000;
+						sdram_write_mask <= 8'h00;
 
 						i_spi_write_state <= 2;
 					end
@@ -344,7 +403,7 @@ module glue(
 							sdram_write_buffer <= write_buffer;
 							sdram_write_mask <= write_mask;
 							write_buffer <= 0;
-							write_mask <= 16'hFFFF;
+							write_mask <= 8'hFF;
 
 							write_state <= 3;
 						end

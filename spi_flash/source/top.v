@@ -169,6 +169,10 @@ module top(
 	wire[12:0] spi_write_len;
 	wire spi_write_done;
 	
+	wire spi_write_buf_strobe;
+	wire[7:0] spi_write_buf_offset;
+	wire[7:0] spi_write_buf_val;
+	
 	wire log_strobe;
 	wire[7:0] log_val;
 	
@@ -200,6 +204,10 @@ module top(
 		.write_addr(spi_write_addr),
 		.write_len(spi_write_len),
 		.write_done(spi_write_done),
+		
+		.write_buf_strobe(spi_write_buf_strobe),
+		.write_buf_offset(spi_write_buf_offset),
+		.write_buf_val(spi_write_buf_val),
 		
 		.log_strobe(log_strobe),
 		.log_val(log_val)
@@ -379,6 +387,10 @@ module top(
 		.spi_write_addr(spi_write_addr),
 		.spi_write_len(spi_write_len),
 		.spi_write_done(spi_write_done),
+		
+		.spi_write_buf_strobe(spi_write_buf_strobe),
+		.spi_write_buf_offset(spi_write_buf_offset),
+		.spi_write_buf_val(spi_write_buf_val),
 		
 		.log_strobe(log_strobe),
 		.log_val(log_val),
