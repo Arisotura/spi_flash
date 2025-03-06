@@ -27,6 +27,12 @@
         <Source name="spi_flash/source/pll_266.v" type="Verilog" type_short="Verilog">
             <Options/>
         </Source>
+        <Source name="spi_flash/source/pll_108.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
+        <Source name="spi_flash/source/pll_96.v" type="Verilog" type_short="Verilog">
+            <Options/>
+        </Source>
         <Source name="spi_flash/source/glue.v" type="Verilog" type_short="Verilog">
             <Options/>
         </Source>

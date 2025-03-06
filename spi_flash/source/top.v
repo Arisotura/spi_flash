@@ -59,7 +59,6 @@ module top(
 	wire clk_133, locked;
 	wire reset = !locked || btn[1];
 	pll_133 pll_133_i(clk_25mhz, clk_133, locked);
-	//pll_132 pll_133_i(clk_25mhz, clk_133, locked);
 	wire clk = clk_133;
 	assign sdram_clk = clk_133;
 	
@@ -69,7 +68,7 @@ module top(
 	wire sdram_read_busy;
 
 	wire[63:0] sdram_write_buffer;
-    wire[7:0] sdram_write_mask;
+    //wire[7:0] sdram_write_mask;
 
 	// --- SPI --------------------------------------------
 	
@@ -87,6 +86,7 @@ module top(
 	wire spi_debug_out;
 	
 	wire spi_debug2_pin = gp[19];
+	wire spi_debug2_out;
 	
 	wire spi_miso_enable;
 	wire spi_miso_out;
@@ -122,6 +122,10 @@ module top(
 		.O(spi_debug_pin),
 		.I(spi_debug_out)
 	);
+	OB spi_debug2_buf(
+		.O(spi_debug2_pin),
+		.I(spi_debug2_out)
+	);
 	
 	reg[1:0] spi_power_reg;
 	//always @(posedge clk) spi_power_reg <= {spi_power_reg[0], spi_power_in};
@@ -146,16 +150,7 @@ module top(
 		end
 	end
 	
-	//wire[1:0] fart = {reset, spi_reset};
-	
 	wire spi_active;
-	
-	OB spi_debug2_buf(
-		.O(spi_debug2_pin),
-		//.I(spi_active)
-		.I(spi_clk_in)
-		//.I(spi_power_in)
-	);
 	
 	wire spi_ram_inhibit_refresh;
 	wire spi_ram_activate;
@@ -272,8 +267,8 @@ module top(
 		.read_buffer(sdram_read_buffer),
 		.read_busy(sdram_read_busy),
 
-		.write_buffer(sdram_write_buffer),
-		.write_mask(sdram_write_mask)
+		.write_buffer(sdram_write_buffer)//,
+		//.write_mask(sdram_write_mask)
 	);
 
 
@@ -337,7 +332,7 @@ module top(
 	// ftdi serial port interface for talking to the host system
 	uart #(
 		.DIVISOR(133 / 3),
-		.FIFO(512),
+		.FIFO(256),
 		//.FIFO(16),
 		.FREESPACE(16)
 		//.FREESPACE(1)
@@ -378,9 +373,10 @@ module top(
 		.sdram_read_busy(sdram_read_busy),
 
 		.sdram_write_buffer(sdram_write_buffer),
-		.sdram_write_mask(sdram_write_mask),
+		//.sdram_write_mask(sdram_write_mask),
 		
-		.spi_active(spi_active),
+		.spi_reset(spi_reset),
+		.spi_csel(spi_cs_in),
 		
 		.spi_cmd_write(spi_write_cmd),
 		.spi_write_type(spi_write_type),
@@ -394,12 +390,9 @@ module top(
 		
 		.log_strobe(log_strobe),
 		.log_val(log_val),
-		
-		//.sdram_debug(sdram_debug),
-		
-		//.farto(fart),
 
-		.led(led)
+		.led(led)//,
+		//.debug(spi_debug2_out)
 	);
 
 endmodule

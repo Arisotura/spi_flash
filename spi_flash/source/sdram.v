@@ -1,5 +1,19 @@
 // usage-specific SDRAM controller
 
+// NOTE on memory access
+// -
+// memory data is stored interleaved to optimize data retrieval for SPI FLASH emulation
+// within a given 8-byte burst:
+// * first byte of memory contains each data byte's bit 7
+// * second byte contains each data byte's bit 6
+// * and so on
+// since bit 7 is the first bit of any data byte we need when answering a SPI read command,
+// this ensures that the first bit(s) will always be received from SDRAM on time,
+// no matter which address is requested
+// -
+// the interleaving scheme is hardcoded for a 8-byte burst length. FIXME
+// (code for non-interleaved storage is left commented out)
+
 module sdram(
     input wire clk,
     input wire reset,
@@ -31,8 +45,8 @@ module sdram(
     output reg[(BURST_LEN*16)-1:0] read_buffer,
 	output reg read_busy,
 
-    input wire[(BURST_LEN*16)-1:0] write_buffer,
-    input wire[(BURST_LEN*2)-1:0] write_mask
+    input wire[(BURST_LEN*16)-1:0] write_buffer//,
+    //input wire[(BURST_LEN*2)-1:0] write_mask
 );
 
     parameter CLK_FREQ_MHZ = 125;
@@ -203,8 +217,14 @@ module sdram(
                         // if doing a write, feed the input data
 
                         dq_oe_o <= 1;
-                        dq_o <= write_buffer[wrbuf_read_ptr*16+:16];
-                        dqm_o <= write_mask[wrbuf_read_ptr*2+:2];
+                        //dq_o <= write_buffer[wrbuf_read_ptr*16+:16];
+                        //dqm_o <= write_mask[wrbuf_read_ptr*2+:2];
+						
+						for (i = 0; i < 8; i=i+1) begin
+							dq_o[i  ] <= write_buffer[i*8 + 7 - (wrbuf_read_ptr*2)];
+							dq_o[i+8] <= write_buffer[i*8 + 6 - (wrbuf_read_ptr*2)];
+						end
+						dqm_o <= 2'b00;
 
                         wrbuf_read_ptr <= wrbuf_read_ptr + 1;
                     end
@@ -301,7 +321,7 @@ module sdram(
                     // read
                     state <= STA_READ;
                     //cmd_busy <= 1;
-                    cmdtarget <= tREAD;
+                    cmdtarget <= tREAD + 2;
 					read_busy <= 1;
 
                     cs_o <= 0;
@@ -325,8 +345,14 @@ module sdram(
                     a_o[8:0] <= access_col;
                     a_o[10] <= 1; // auto precharge
                     dq_oe_o <= 1;
-                    dq_o <= write_buffer[15:0];
-                    dqm_o <= write_mask[1:0];
+                    //dq_o <= write_buffer[15:0];
+                    //dqm_o <= write_mask[1:0];
+					
+					for (i = 0; i < 8; i=i+1) begin
+						dq_o[i  ] <= write_buffer[i*8 + 7];
+						dq_o[i+8] <= write_buffer[i*8 + 6];
+					end
+					dqm_o <= 2'b00;
                 end
                 else if ((refreshcount >= tREFRESH) && (!do_inhibit_refresh)) begin
                     // if we are past due, send a refresh command
@@ -350,7 +376,13 @@ module sdram(
 			
 			// if reading data, advance the read
 			if ((readcount > tCAS) && (readcount <= tCAS+BURST_LEN)) begin
-				read_buffer[rdbuf_write_ptr*16+:16] <= dq_i;
+				
+				//read_buffer[rdbuf_write_ptr*16+:16] <= dq_i;
+				for (i = 0; i < 8; i=i+1) begin
+					read_buffer[i*8 + 7 - rdbuf_write_ptr*2] <= dq_i[i  ];
+					read_buffer[i*8 + 6 - rdbuf_write_ptr*2] <= dq_i[i+8];
+				end
+				
 				if (rdbuf_write_ptr == BURST_LEN-1) read_busy <= 0;
                 rdbuf_write_ptr <= rdbuf_write_ptr + 1;
 			end

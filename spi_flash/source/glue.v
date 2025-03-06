@@ -21,12 +21,12 @@ module glue(
 	input wire sdram_read_busy,
 
     output reg[63:0] sdram_write_buffer,
-    output reg[7:0] sdram_write_mask,
 	
-	input wire[3:0] sdram_debug,
+	//input wire[3:0] sdram_debug,
 	
 	// SPI signals
-	input wire spi_active,
+	input wire spi_reset,
+	input wire spi_csel,
 	
 	input wire spi_cmd_write,
 	input wire spi_write_type,	// 0=write 1=erase
@@ -41,9 +41,8 @@ module glue(
 	input wire log_strobe,
 	input wire[7:0] log_val,
 	
-	//input wire[1:0] farto,
-
-    output reg[7:0] led
+    output reg[7:0] led//,
+	//output reg debug
 );
 
     localparam
@@ -59,9 +58,6 @@ module glue(
 
     reg[21:0] addr;
 	reg[7:0] len;
-    //reg[24:0] len;
-
-    //reg[55:0] debug;
 
     reg[2:0] read_state;
     reg[2:0] read_pos;
@@ -85,18 +81,19 @@ module glue(
 	always @(posedge clk) log_strobe_buf <= {log_strobe_buf[0], log_strobe};
 	reg log_ack;
 	
+	reg[1:0] spi_csel_buf;
+	
 	reg spi_writing;
 	reg spi_write_ack;
 	reg[1:0] spi_cmd_write_buf;
 	
 	reg i_spi_write_type;
-	reg[1:0] i_spi_write_state;
-	reg[21:0] i_spi_addr;
+	reg[2:0] i_spi_write_state;
 	reg[12:0] i_spi_len;
 	
-	reg[7:0] i_spi_write_data[0:255];
-	reg i_spi_write_mask[0:255];
+	reg[8:0] i_spi_write_data[0:255];
 	reg[1:0] spi_write_buf_strobe_buf;
+	reg spi_write_buf_ack;
 	
 	integer i;
 
@@ -115,14 +112,8 @@ module glue(
             write_pos <= 0;
 
             sdram_access_cmd <= 0;
-            sdram_access_addr <= 0;
             sdram_inhibit_refresh <= 0;
 
-            sdram_write_buffer <= 0;
-            sdram_write_mask <= 16'hFFFF;
-			
-			write_buffer <= 0;
-			write_mask <= 16'hFFFF;
 			write_strobe <= 0;
 
             txd_strobe_buf <= 0;
@@ -139,15 +130,11 @@ module glue(
 			spi_cmd_write_buf <= 0;
 			spi_write_done <= 0;
 			
-			/*i_spi_write_type <= 0;
-			i_spi_write_state <= 0;
-			i_spi_addr <= 0;
-			i_spi_len <= 0;*/
-			
 			spi_write_buf_strobe_buf <= 0;
-			
+			spi_write_buf_ack <= 0;
+
 			for (i = 0; i < 256; i=i+1)
-				i_spi_write_mask[i] <= 1;
+				i_spi_write_data[i][8] <= 0;
         end
         else begin
             txd_strobe_buf <= 0;
@@ -156,21 +143,21 @@ module glue(
 			
 			rxd_strobe_buf <= rxd_strobe;
 			rxd_data_buf <= rxd_data;
-
+			
+			sdram_access_addr <= {addr, 2'b0};
+			//read_buffer <= sdram_read_buffer;
+			sdram_write_buffer <= write_buffer;
+			sdram_inhibit_refresh <= 0;
+	
             if (sdram_access_cmd)
                 sdram_access_cmd <= 0;
+				
+			spi_csel_buf <= {spi_csel_buf[0], spi_csel};
 
-			led[7] <= spi_active;
+			led[7] <= (!spi_reset) && (!spi_csel_buf[1]);
 			led[6] <= sdram_cmd_busy;
-			//led[2:0] <= write_state;
-			//led[5:3] <= write_pos;
-			//led[5:4] <= farto;
+			led[5] <= spi_writing;
 			
-			/*if (sdram_debug[3]) begin
-				txd_strobe_buf <= 1;
-				txd_data_buf <= {4'h7, sdram_debug};
-			end
-			else*/
 			if (log_strobe_buf[1] && (!log_ack)) begin
 				txd_strobe_buf <= 1;
 				txd_data_buf <= log_val;
@@ -178,118 +165,105 @@ module glue(
 			end
 			if (!log_strobe_buf[1]) log_ack <= 0;
 				
+				
 			spi_write_buf_strobe_buf <= {spi_write_buf_strobe_buf[0], spi_write_buf_strobe};
-			if (spi_write_buf_strobe_buf[1]) begin
+			
+			if (!spi_write_buf_strobe_buf[1])
+				spi_write_buf_ack <= 0;
+				
+			if (spi_write_buf_strobe_buf[1] && (!spi_write_buf_ack)) begin
 				// store data in the buffer for page program operations
-				i_spi_write_data[spi_write_buf_offset] <= spi_write_buf_val;
-				i_spi_write_mask[spi_write_buf_offset] <= 0;
+				i_spi_write_data[spi_write_buf_offset] <= {1'b1, spi_write_buf_val};
+				spi_write_buf_ack <= 1;
 			end
+			
 				
 			spi_cmd_write_buf <= {spi_cmd_write_buf[0], spi_cmd_write};
 			
 			if (!spi_cmd_write_buf[1])
 				spi_write_ack <= 0;
 
-			if (spi_cmd_write_buf[1] && (!spi_write_ack) && (!spi_active)) begin
+			if (spi_cmd_write_buf[1] && (!spi_write_ack) && spi_csel_buf[1]) begin
 				spi_writing <= 1;
 				spi_write_ack <= 1;
+				
 				i_spi_write_type <= spi_write_type;
-				i_spi_write_state <= 0;
-				i_spi_addr <= spi_write_addr;
+				i_spi_write_state <= spi_write_type ? 3 : 0;
+				
+				addr <= spi_write_addr;
 				i_spi_len <= spi_write_len;
 				spi_write_done <= 0;
+				
+				if (spi_write_type)
+					write_buffer <= 64'hFFFFFFFFFFFFFFFF;
 			end
-			else if (spi_writing) begin
+			
+			if (spi_writing && (!sdram_busy)) begin
 				// handle SPI write
-				
-				if (i_spi_write_type == 0) begin
-					// write
 
-					if ((i_spi_write_state == 0) && (!sdram_busy)) begin
-						// activate
-						sdram_access_cmd <= 2'b11;
-						sdram_access_addr <= {i_spi_addr, 2'b0};
-
-						i_spi_write_state <= 1;
-					end
-					else if ((i_spi_write_state == 1) && (!sdram_busy)) begin
-						// write
-						sdram_access_cmd <= 2'b10;
-						sdram_access_addr <= {i_spi_addr, 2'b0};
-						
-						for (i = 0; i < 8; i=i+1) begin
-							sdram_write_buffer[i*8+:8] <= i_spi_write_data[(i_spi_addr[4:0]<<3)+i];
-							sdram_write_mask[i] <= i_spi_write_mask[(i_spi_addr[4:0]<<3)+i];
-						end
-
-						i_spi_write_state <= 2;
-					end
-					else if ((i_spi_write_state == 2) && (!sdram_busy)) begin
-
-						if (i_spi_len <= 8) begin
-							// finished
-							spi_writing <= 0;
-							spi_write_done <= 1;
-							
-							// reset write mask
-							for (i = 0; i < 256; i=i+1)
-								i_spi_write_mask[i] <= 1;
-						end
-						else begin
-							// prepare for the next burst
-							i_spi_write_state <= 0;
-							
-							i_spi_addr <= i_spi_addr + 1;
-							i_spi_len <= i_spi_len - 8;
-						end
-					end
-				end
-				else begin
-					// erase
+				if (i_spi_write_state == 0) begin
+					// activate for read
+					sdram_access_cmd <= 2'b11;
 					
-					if ((i_spi_write_state == 0) && (!sdram_busy)) begin
-						// activate
-						sdram_access_cmd <= 2'b11;
-						sdram_access_addr <= {i_spi_addr, 2'b0};
-
-						i_spi_write_state <= 1;
+					// prepare data
+					for (i = 0; i < 8; i=i+1) begin
+						write_buffer[i*8+:8] <= i_spi_write_data[addr[4:0]*8+i][7:0];
+						write_mask[i] <= i_spi_write_data[addr[4:0]*8+i][8];
+						i_spi_write_data[addr[4:0]*8+i][8] <= 0;
 					end
-					else if ((i_spi_write_state == 1) && (!sdram_busy)) begin
-						// write
-						sdram_access_cmd <= 2'b10;
-						sdram_access_addr <= {i_spi_addr, 2'b0};
-						
-						sdram_write_buffer <= 64'hFFFFFFFFFFFFFFFF;
-						sdram_write_mask <= 8'h00;
 
-						i_spi_write_state <= 2;
-					end
-					else if ((i_spi_write_state == 2) && (!sdram_busy)) begin
+					i_spi_write_state <= 1;
+				end
+				else if (i_spi_write_state == 1) begin
+					// read
+					sdram_access_cmd <= 2'b01;
 
-						if (i_spi_len == 0) begin
-							// finished
-							spi_writing <= 0;
-							spi_write_done <= 1;
-						end
-						else begin
-							// prepare for the next burst
-							i_spi_write_state <= 0;
-							
-							i_spi_addr <= i_spi_addr + 1;
-							i_spi_len <= i_spi_len - 1;
-						end
+					i_spi_write_state <= 2;
+				end
+				else if (i_spi_write_state == 2) begin
+					// modify
+					for (i = 0; i < 8; i=i+1) begin
+						if (!write_mask[i])
+							write_buffer[i*8+:8] <= sdram_read_buffer[i*8+:8];
 					end
+
+					i_spi_write_state <= 3;
 				end
 				
+				if (i_spi_write_state == 3) begin
+					// activate for write
+					sdram_access_cmd <= 2'b11;
+
+					i_spi_write_state <= 4;
+				end
+				else if (i_spi_write_state == 4) begin
+					// write
+					sdram_access_cmd <= 2'b10;
+
+					i_spi_write_state <= 5;
+				end
+				else if (i_spi_write_state == 5) begin
+
+					if (i_spi_len == 0) begin
+						// finished
+						spi_writing <= 0;
+						spi_write_done <= 1;
+					end
+					else begin
+						// prepare for the next burst
+						i_spi_write_state <= spi_write_type ? 3 : 0;
+						
+						addr <= addr + 1;
+						i_spi_len <= i_spi_len - 1;
+					end
+				end
 			end
-            else if (!spi_active) begin
-				sdram_inhibit_refresh <= 0;
+            
+			if (spi_reset || spi_csel_buf[1]) begin
 				
 				if (rxd_strobe_buf) begin
-					//led[7] <= 1;
 
 					if (in_count == 0) begin
-						//if (rxd_data_buf) led <= rxd_data_buf;
 						if (rxd_data_buf == CMD_VERSION) begin
 							txd_strobe_buf <= 1;
 							txd_data_buf <= VERSION;
@@ -319,12 +293,10 @@ module glue(
 
 						end
 						if (cmd == CMD_RAMWRITE && in_count > 4) begin
-							//led[6] <= 1;
+							
 							write_buffer[write_pos*8+:8] <= rxd_data_buf;
-							write_mask[write_pos] <= 0;
-
+							
 							if (write_pos == 7) begin
-								//if (write_strobe) led[0] <= 1;
 								write_strobe <= 1;
 							end
 
@@ -338,8 +310,7 @@ module glue(
 
 				end
 				else begin
-					//txd_strobe <= 0;
-					
+
 					if (write_strobe && (!sdram_busy))
 						write_state <= 1;
 
@@ -347,14 +318,12 @@ module glue(
 						if ((read_state == 1) && (!sdram_busy)) begin
 							// activate
 							sdram_access_cmd <= 2'b11;
-							sdram_access_addr <= {addr, 2'b0};
 
 							read_state <= 2;
 						end
 						else if ((read_state == 2) && (!sdram_busy)) begin
 							// read
 							sdram_access_cmd <= 2'b01;
-							sdram_access_addr <= {addr, 2'b0};
 
 							read_state <= 3;
 						end
@@ -389,31 +358,21 @@ module glue(
 						if ((write_state == 1) && (!sdram_busy)) begin
 							// activate
 							sdram_access_cmd <= 2'b11;
-							sdram_access_addr <= {addr, 2'b0};
-							
-							write_strobe <= 0;
 
+							write_strobe <= 0;
 							write_state <= 2;
 						end
 						else if ((write_state == 2) && (!sdram_busy)) begin
 							// write
 							sdram_access_cmd <= 2'b10;
-							sdram_access_addr <= {addr, 2'b0};
-							
-							sdram_write_buffer <= write_buffer;
-							sdram_write_mask <= write_mask;
-							write_buffer <= 0;
-							write_mask <= 8'hFF;
 
 							write_state <= 3;
 						end
 						else if ((write_state == 3) && (!sdram_busy)) begin
 
 							if (len == 1) begin
-								//led[1] <= 1;
 								if (txd_ready) begin
 									// finished
-									//led[2] <= 1;
 									txd_strobe_buf <= 1;
 									txd_data_buf <= 8'h01;
 
@@ -425,7 +384,6 @@ module glue(
 							else begin
 								// prepare for the next burst
 								write_state <= 0;
-								//led[3] <= 1;
 								
 								addr <= addr + 1;
 								len <= len - 1;

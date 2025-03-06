@@ -225,7 +225,8 @@ module spi_trx(
 							state <= STA_ADDR_WRITE;
 							
 							addr_count <= addr_4byte ? 31 : 23;
-							write_len <= 0;
+							//write_len <= 0;
+							write_len <= 13'h1F;
 						end
 					end
 					
@@ -278,6 +279,7 @@ module spi_trx(
 						ram_read <= 0;
 							
 						fresh_read <= 1;
+						//miso_byte <= ram_read_buffer[{addr[2:1],spi_mosi}*8+:8];
 					end
 					
 					if (bit_count_in == 0) begin
@@ -337,7 +339,7 @@ module spi_trx(
 						write_cmd <= 1;
 						write_type <= 1;
 						
-						if (write_len[15])
+						if (write_len[12])
 							write_addr <= {addr[24:16], 13'b0};
 						else
 							write_addr <= {addr[24:12], 9'b0};
@@ -360,7 +362,8 @@ module spi_trx(
 						write_cmd <= 1;
 						write_type <= 0;
 						
-						write_addr <= addr[24:3];
+						//write_addr <= addr[24:3];
+						write_addr <= {addr[24:8], 5'b0};
 							
 						status_reg[1] <= 0; // reset write enable
 						status_reg[0] <= 1; // write in progress
@@ -381,8 +384,8 @@ module spi_trx(
 					write_buf_val <= {mosi_byte[7:1], spi_mosi};
 					
 					addr[7:0] <= addr[7:0] + 1;
-					if (!write_len[8])
-						write_len <= write_len + 1;
+					//if (!write_len[8])
+					//	write_len <= write_len + 1;
 				end
 				else if (state == STA_LOG) begin
 					if (bit_count_in == 0) begin
